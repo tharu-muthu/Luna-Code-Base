@@ -85,17 +85,19 @@ class MotorController:
         self.stop()
 
     def turn_left(self):
+        # Point turn left: Left wheels backward, Right wheels forward
         GPIO.output(self.in1, GPIO.LOW)
-        GPIO.output(self.in2, GPIO.LOW)
+        GPIO.output(self.in2, GPIO.HIGH)
         GPIO.output(self.in3, GPIO.HIGH)
         GPIO.output(self.in4, GPIO.LOW)
         time.sleep(Config.MOTOR_RUN_DURATION)
         self.stop()
 
     def turn_right(self):
+        # Point turn right: Left wheels forward, Right wheels backward
         GPIO.output(self.in1, GPIO.HIGH)
         GPIO.output(self.in2, GPIO.LOW)
         GPIO.output(self.in3, GPIO.LOW)
-        GPIO.output(self.in4, GPIO.LOW)
+        GPIO.output(self.in4, GPIO.HIGH)
         time.sleep(Config.MOTOR_RUN_DURATION)
         self.stop()
