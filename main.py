@@ -8,8 +8,8 @@ from emotion_manager import EmotionManager
 
 from display import RoboEyes
 from led_emotions import LEDController
-from servoNewFunction import ServoController
-from gearNewFunction import MotorController
+from servo_controller import ServoController
+from motor_controller import MotorController
 from touch_sensor import TouchSensor
 
 from audio_player import AudioPlayer

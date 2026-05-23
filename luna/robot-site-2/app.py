@@ -12,7 +12,7 @@ from audio_player import AudioPlayer
 from command_handler import CommandHandler
 from display import RoboEyes
 from led_emotions import LEDController
-from servoNewFunction import ServoController
+from servo_controller import ServoController
 
 # ---------------- Camera Setup ----------------
 BASE_DIR = Path(__file__).resolve().parent
