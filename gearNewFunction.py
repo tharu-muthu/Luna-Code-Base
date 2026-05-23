@@ -1,4 +1,37 @@
-import RPi.GPIO as GPIO
+try:
+    import RPi.GPIO as GPIO
+except ImportError:
+    print("[Motors] RPi.GPIO not found. Entering Simulation Mode (dummy logging).")
+    
+    class DummyPWM:
+        def __init__(self, pin, frequency):
+            self.pin = pin
+            self.frequency = frequency
+        def start(self, duty_cycle):
+            pass
+        def ChangeDutyCycle(self, duty_cycle):
+            pass
+        def stop(self):
+            pass
+
+    class DummyGPIO:
+        BCM = "BCM"
+        OUT = "OUT"
+        LOW = 0
+        HIGH = 1
+        PUD_DOWN = "PUD_DOWN"
+        
+        def setmode(self, mode): pass
+        def setwarnings(self, state): pass
+        def setup(self, pins, direction, pull_up_down=None): pass
+        def output(self, pin, value): pass
+        def input(self, pin): return 0
+        def PWM(self, pin, frequency):
+            return DummyPWM(pin, frequency)
+        def cleanup(self): pass
+
+    GPIO = DummyGPIO()
+
 import time
 from config import Config
 

@@ -1,14 +1,28 @@
 import time
-from board import SCL, SDA
-import busio
-from adafruit_pca9685 import PCA9685
+
+try:
+    from board import SCL, SDA
+    import busio
+    from adafruit_pca9685 import PCA9685
+    HAS_PCA = True
+except ImportError:
+    HAS_PCA = False
 
 
 class ServoController:
     def __init__(self):
-        i2c = busio.I2C(SCL, SDA)
-        self.pca = PCA9685(i2c)
-        self.pca.frequency = 60
+        if HAS_PCA:
+            try:
+                i2c = busio.I2C(SCL, SDA)
+                self.pca = PCA9685(i2c)
+                self.pca.frequency = 60
+                self.is_simulated = False
+            except Exception as e:
+                print(f"[Servos] PCA9685 hardware creation failed ({e}). Entering Simulation Mode.")
+                self.is_simulated = True
+        else:
+            print("[Servos] PCA9685 libraries not found. Entering Simulation Mode (dummy logging).")
+            self.is_simulated = True
 
         self.SERVOMIN = 150
         self.SERVOMAX = 580
@@ -26,8 +40,12 @@ class ServoController:
         return int(self.SERVOMIN + (angle / 180.0) * (self.SERVOMAX - self.SERVOMIN))
 
     def set_servo_angle(self, channel, angle):
-        pulse = self.angle_to_pulse(angle)
-        self.pca.channels[channel].duty_cycle = pulse << 4
+        if self.is_simulated:
+            # Simulated: do not invoke I2C registers
+            pass
+        else:
+            pulse = self.angle_to_pulse(angle)
+            self.pca.channels[channel].duty_cycle = pulse << 4
 
     def set_neutral(self):
         self.set_servo_angle(self.left_hand, 90)

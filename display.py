@@ -1,11 +1,16 @@
 import time
 import random
 import math
-import board
-import digitalio
 import threading
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from adafruit_rgb_display import ili9341
+
+try:
+    import board
+    import digitalio
+    from adafruit_rgb_display import ili9341
+    HAS_DISPLAY = True
+except ImportError:
+    HAS_DISPLAY = False
 
 # Display dimensions for landscape mode
 WIDTH = 320
@@ -23,26 +28,37 @@ MOOD_COLORS = {
 
 class RoboEyes:
     def __init__(self):
-        # Setup ILI9341 display inside the class
-        cs_pin = digitalio.DigitalInOut(board.D5)
-        dc_pin = digitalio.DigitalInOut(board.D6)
-        reset_pin = digitalio.DigitalInOut(board.D13)
-        spi = board.SPI()
-
-        self.disp = ili9341.ILI9341(
-            spi,
-            cs=cs_pin,
-            dc=dc_pin,
-            rst=reset_pin,
-            width=WIDTH,
-            height=HEIGHT,
-            rotation=180
-        )
-
         self.width = WIDTH
         self.height = HEIGHT
         self.image = Image.new("RGB", (self.width, self.height), "black")
         self.draw_obj = ImageDraw.Draw(self.image)
+
+        if HAS_DISPLAY:
+            try:
+                # Setup ILI9341 display inside the class
+                cs_pin = digitalio.DigitalInOut(board.D5)
+                dc_pin = digitalio.DigitalInOut(board.D6)
+                reset_pin = digitalio.DigitalInOut(board.D13)
+                spi = board.SPI()
+
+                self.disp = ili9341.ILI9341(
+                    spi,
+                    cs=cs_pin,
+                    dc=dc_pin,
+                    rst=reset_pin,
+                    width=WIDTH,
+                    height=HEIGHT,
+                    rotation=180
+                )
+                self.is_simulated = False
+            except Exception as e:
+                print(f"[Display] SPI display hardware initialization failed ({e}). Running in headless Simulation Mode.")
+                self.is_simulated = True
+                self.disp = None
+        else:
+            print("[Display] Display libraries (board/digitalio/adafruit_rgb_display) not found. Running in headless Simulation Mode.")
+            self.is_simulated = True
+            self.disp = None
 
         self.eye_w = 110
         self.eye_h = 110
@@ -107,7 +123,8 @@ class RoboEyes:
         self.image.paste((0, 0, 0), [0, 0, self.width, self.height])
         self._draw_eye(self.draw_obj, self.left_eye_pos, True)
         self._draw_eye(self.draw_obj, self.right_eye_pos, False)
-        self.disp.image(self.image)
+        if not self.is_simulated and self.disp is not None:
+            self.disp.image(self.image)
 
     def _draw_heart(self, draw, cx, cy, size, fill_color):
         scale = 0.05
@@ -257,7 +274,8 @@ class RoboEyes:
         self.blinking = False
         self.auto_blink = False
         self.image.paste((0, 0, 0), [0, 0, self.width, self.height])
-        self.disp.image(self.image)
+        if not self.is_simulated and self.disp is not None:
+            self.disp.image(self.image)
 
     def display_number(self, num):
         image = Image.new("RGB", (self.width, self.height), "black")
@@ -273,7 +291,8 @@ class RoboEyes:
         x = (self.width - w) // 2
         y = (self.height - h) // 2 - 30
         draw.text((x, y), text, font=font, fill=(255, 255, 255))
-        self.disp.image(image)
+        if not self.is_simulated and self.disp is not None:
+            self.disp.image(image)
 
     # def numbers(self, delay=1):
     #     for num in range(1, 11):
@@ -328,7 +347,8 @@ class RoboEyes:
         x = (self.width - w) // 2
         y = (self.height - h) // 2 - 30
         draw.text((x, y), letter, font=font, fill=(255, 255, 255))
-        self.disp.image(image)
+        if not self.is_simulated and self.disp is not None:
+            self.disp.image(image)
 
     def alphabet(self):
         timeline = {
@@ -360,7 +380,8 @@ class RoboEyes:
             x = (self.width - 239) // 2
             y = (self.height - 239) // 2
             background.paste(image, (x, y))
-            self.disp.image(background)
+            if not self.is_simulated and self.disp is not None:
+                self.disp.image(background)
             time.sleep(delay)
         except Exception as e:
             print(f"Error loading/displaying animal '{name}': {e}")
