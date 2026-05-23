@@ -39,10 +39,11 @@ from config import Config
 
 
 class TouchSensor:
-    def __init__(self, leds, eyes, servos):
+    def __init__(self, leds, eyes, servos, handler=None):
         self.leds = leds
         self.eyes = eyes
         self.servos = servos
+        self.handler = handler
         self.touch_pin = 4  # GPIO 4 (Physical Pin 7)
         self.cooldown = Config.TOUCH_COOLDOWN
         self.last_touch_time = 0
@@ -55,6 +56,11 @@ class TouchSensor:
         print("[TouchSensor] Ready on GPIO 4...")
         while True:
             if GPIO.input(self.touch_pin) == GPIO.HIGH:
+                # Ignore touch if the robot is sleeping!
+                if getattr(self.handler, "sleeping", False):
+                    time.sleep(0.5)
+                    continue
+
                 now = time.time()
                 if now - self.last_touch_time >= self.cooldown:
                     self.last_touch_time = now

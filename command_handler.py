@@ -17,6 +17,7 @@ class CommandHandler:
         self.motors = motors
         self.detector = emotion_detector
         self.timeline_thread = None
+        self.sleeping = False
 
         self.number_map = {
             "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -28,6 +29,12 @@ class CommandHandler:
     # =========================
     def handle(self, intent, slots):
         # print(f"[Command] Intent: {intent}, Slots: {slots}")
+
+        # If sleeping, only allow the "wake" intent!
+        if getattr(self, "sleeping", False):
+            if intent == "wake":
+                self._handle_wake_up()
+            return
 
         # Volume control
         if intent == "volume":
@@ -221,13 +228,7 @@ class CommandHandler:
     # =========================
     # Navigation
     # =========================
-    def _handle_navigation(self, direction):
-        sound_map = {
-            "forward": "coming_fowrd",
-            "backward": "going_backward",
-            "left": "turning_left",
-            "right": "turning_right"
-        }
+    def execute_movement(self, direction, speak=True):
         motor_map = {
             "forward": self.motors.forward,
             "backward": self.motors.backward,
@@ -235,14 +236,29 @@ class CommandHandler:
             "right": self.motors.turn_right
         }
 
-        if direction not in sound_map or direction not in motor_map:
+        if direction not in motor_map:
             return
 
-        self.audio.play_feedback(sound_map[direction], wait=True)
-        time.sleep(Config.FEEDBACK_DELAY)
+        if speak:
+            sound_map = {
+                "forward": "coming_fowrd",
+                "backward": "going_backward",
+                "left": "turning_left",
+                "right": "turning_right"
+            }
+            if direction in sound_map:
+                self.audio.play_feedback(sound_map[direction], wait=True)
+                time.sleep(Config.FEEDBACK_DELAY)
+
+        # 1 wave cycle takes 1.2s. MOTOR_RUN_DURATION is 3.0s.
+        # Trigger exactly 2 cycles (2.4s total wave duration) to align with wheels
+        cycles = int(Config.MOTOR_RUN_DURATION / 1.2)
 
         threading.Thread(target=motor_map[direction], daemon=True).start()
-        threading.Thread(target=self.servos.wave, daemon=True).start()
+        threading.Thread(target=self.servos.wave, args=(cycles,), daemon=True).start()
+
+    def _handle_navigation(self, direction):
+        self.execute_movement(direction, speak=True)
 
     # =========================
     # Stop, Next, Sleep

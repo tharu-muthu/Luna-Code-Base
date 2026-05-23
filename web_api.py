@@ -10,6 +10,17 @@ def create_app(handler, audio, eyes, leds, servos, motors):
     app = Flask(__name__)
     streaming_process = {"p": None}  # use dict to mutate in closures
 
+    # ---------- Sleep Gate Middleware ----------
+    @app.before_request
+    def check_sleep():
+        control_routes = (
+            '/move', '/volume', '/play', '/music', '/education/play', 
+            '/story/stop', '/story/next', '/music/stop', '/music/next', 
+            '/education/stop', '/education/next'
+        )
+        if request.path in control_routes and getattr(handler, "sleeping", False):
+            return ('Robot is sleeping', 403)
+
     # ---------- Helpers ----------
     def bg(target, *args, **kwargs):
         threading.Thread(target=target, args=args, kwargs=kwargs, daemon=True).start()
@@ -62,11 +73,11 @@ def create_app(handler, audio, eyes, leds, servos, motors):
     @app.route('/move', methods=['POST'])
     def move():
         direction = request.form.get('direction', '')
-        if   direction == 'forward':  motors.forward()
-        elif direction == 'backward': motors.backward()
-        elif direction == 'left':     motors.turn_left()
-        elif direction == 'right':    motors.turn_right()
-        else:                         motors.stop()
+        if direction in ('forward', 'backward', 'left', 'right'):
+            handler.execute_movement(direction, speak=False)
+        else:
+            motors.stop()
+            servos.set_neutral()
         return ('', 204)
 
     # ---------- Volume ----------

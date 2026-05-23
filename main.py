@@ -46,7 +46,7 @@ def initialize_components():
     voice = VoiceController(handler, audio)
 
     # Touch sensor thread
-    touch_sensor = TouchSensor(leds, eyes, servos)
+    touch_sensor = TouchSensor(leds, eyes, servos, handler)
     threading.Thread(target=touch_sensor.listen_for_touch, daemon=True).start()
 
     # RETURN EVERYTHING we need for the web server
