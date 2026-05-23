@@ -61,6 +61,19 @@ class TouchSensor:
                     time.sleep(0.5)
                     continue
 
+                # Ignore touch if something is playing!
+                audio_playing = False
+                if self.handler and getattr(self.handler, "audio", None):
+                    try:
+                        import pygame
+                        audio_playing = self.handler.audio.is_playing or pygame.mixer.music.get_busy()
+                    except Exception:
+                        audio_playing = self.handler.audio.is_playing
+
+                if audio_playing:
+                    time.sleep(0.5)
+                    continue
+
                 now = time.time()
                 if now - self.last_touch_time >= self.cooldown:
                     self.last_touch_time = now
