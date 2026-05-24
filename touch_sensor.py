@@ -35,6 +35,7 @@ except ImportError:
 
 import time
 import threading
+import pygame
 from config import Config
 
 
@@ -65,7 +66,6 @@ class TouchSensor:
                 audio_playing = False
                 if self.handler and getattr(self.handler, "audio", None):
                     try:
-                        import pygame
                         audio_playing = self.handler.audio.is_playing or pygame.mixer.music.get_busy()
                     except Exception:
                         audio_playing = self.handler.audio.is_playing

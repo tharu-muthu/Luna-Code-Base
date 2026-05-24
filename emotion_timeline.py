@@ -115,15 +115,31 @@ class EmotionTimeline:
         self.current_emotion = None
         self.story_id = story_id
         self.start_time = None
+        self.paused_time = None
+        self.accumulated_paused = 0.0
 
     def start(self):
         self.start_time = time.time()
+        self.paused_time = None
+        self.accumulated_paused = 0.0
+
+    def pause(self):
+        if self.start_time and not self.paused_time:
+            self.paused_time = time.time()
+
+    def resume(self):
+        if self.paused_time:
+            self.accumulated_paused += time.time() - self.paused_time
+            self.paused_time = None
 
     def get_current_emotion(self):
         if not self.start_time:
             return None
 
-        elapsed = time.time() - self.start_time
+        if self.paused_time:
+            elapsed = self.paused_time - self.start_time - self.accumulated_paused
+        else:
+            elapsed = time.time() - self.start_time - self.accumulated_paused
 
         for start, end, emotion in self.timelines[self.story_id]:
             if start <= elapsed < end:

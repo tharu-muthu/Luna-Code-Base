@@ -4,24 +4,27 @@ from pathlib import Path
 import subprocess, threading, re
 
 # Where your site files live
-SITE_DIR = Path(__file__).resolve().parent / "luna" / "robot-site-2"
+SITE_DIR = Path("/home/tharu/luna/robot-site-2")
 
 def create_app(handler, audio, eyes, leds, servos, motors):
     app = Flask(__name__)
     streaming_process = {"p": None}  # use dict to mutate in closures
 
-    # ---------- Sleep Gate Middleware ----------
-    @app.before_request
-    def check_sleep():
-        control_routes = (
-            '/move', '/volume', '/play', '/music', '/education/play', 
-            '/story/stop', '/story/next', '/music/stop', '/music/next', 
-            '/education/stop', '/education/next'
-        )
-        if request.path in control_routes and getattr(handler, "sleeping", False):
-            return ('Robot is sleeping', 403)
-
     # ---------- Helpers ----------
+    def check_and_stop_stream():
+        p = streaming_process.get("p", None)
+        if p:
+            try:
+                p.terminate()
+                p.wait(timeout=1.0)
+            except:
+                pass
+            streaming_process["p"] = None
+            return True
+        return False
+
+    handler.check_and_stop_stream = check_and_stop_stream
+
     def bg(target, *args, **kwargs):
         threading.Thread(target=target, args=args, kwargs=kwargs, daemon=True).start()
 
@@ -33,17 +36,28 @@ def create_app(handler, audio, eyes, leds, servos, motors):
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
         )
         buf = b""
-        while True:
-            if streaming_process["p"].poll() is not None:
-                break
-            chunk = streaming_process["p"].stdout.read(1024)
-            if not chunk:
-                continue
-            buf += chunk
-            s = buf.find(b'\xff\xd8'); e = buf.find(b'\xff\xd9')
-            if s != -1 and e != -1 and e > s:
-                frame = buf[s:e+2]; buf = buf[e+2:]
-                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        try:
+            while True:
+                if streaming_process["p"].poll() is not None:
+                    break
+                chunk = streaming_process["p"].stdout.read(1024)
+                if not chunk:
+                    continue
+                buf += chunk
+                s = buf.find(b'\xff\xd8'); e = buf.find(b'\xff\xd9')
+                if s != -1 and e != -1 and e > s:
+                    frame = buf[s:e+2]; buf = buf[e+2:]
+                    yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        finally:
+            # Always terminate camera process when client disconnects
+            p = streaming_process.get("p")
+            if p:
+                try:
+                    p.terminate()
+                    p.wait(timeout=2.0)
+                except:
+                    pass
+                streaming_process["p"] = None
 
     # ---------- Static files ----------
     @app.route('/')
@@ -73,20 +87,61 @@ def create_app(handler, audio, eyes, leds, servos, motors):
     @app.route('/move', methods=['POST'])
     def move():
         direction = request.form.get('direction', '')
-        if direction in ('forward', 'backward', 'left', 'right'):
-            handler.execute_movement(direction, speak=False)
-        else:
-            motors.stop()
-            servos.set_neutral()
+        if   direction == 'forward':  motors.forward()
+        elif direction == 'backward': motors.backward()
+        elif direction == 'left':     motors.turn_left()
+        elif direction == 'right':    motors.turn_right()
+        else:                         motors.stop()
         return ('', 204)
 
     # ---------- Volume ----------
-    @app.route('/volume', methods=['POST'])
+    @app.route('/volume', methods=['GET', 'POST'])
     def volume():
-        intensity = request.form.get('intensity', '')
-        if intensity == 'increase': audio.increase_volume()
-        elif intensity == 'decrease': audio.decrease_volume()
-        return ('', 204)
+        if request.method == 'POST':
+            intensity = request.form.get('intensity', '')
+            if intensity == 'increase': audio.increase_volume()
+            elif intensity == 'decrease': audio.decrease_volume()
+        return {"volume": round(audio.get_volume() * 100)}
+
+    # ---------- Pause / Resume ----------
+    @app.route('/pause', methods=['POST'])
+    def pause_playback():
+        handler._handle_pause()
+        return {"status": "paused"}
+
+    @app.route('/resume', methods=['POST'])
+    def resume_playback():
+        handler._handle_resume()
+        return {"status": "playing"}
+
+    # ---------- Status Sync ----------
+    @app.route('/status', methods=['GET'])
+    def get_status():
+        category = audio.current_category
+        track_name = "Nothing playing"
+        
+        if audio.is_playing or audio.is_paused:
+            if category == "story":
+                track_name = f"Story {audio.last_index}" if audio.last_index else "Story"
+            elif category == "song":
+                track_name = f"Music {audio.last_index}" if audio.last_index else "Music"
+            elif category == "education":
+                if audio.current_file:
+                    filename = Path(audio.current_file).name # e.g. 'alphabet.mp3'
+                    edu_name = filename.split('.')[0] # 'alphabet'
+                    track_name = edu_name.capitalize() # 'Alphabet'
+                else:
+                    track_name = "Education"
+        else:
+            track_name = "Stopped"
+
+        return {
+            "playing": audio.is_playing,
+            "paused": audio.is_paused,
+            "category": category,
+            "track": track_name,
+            "volume": round(audio.get_volume() * 100)
+        }
 
     # ---------- Stories ----------
     @app.route('/play', methods=['POST'])
@@ -104,6 +159,11 @@ def create_app(handler, audio, eyes, leds, servos, motors):
     @app.route('/story/next', methods=['POST'])
     def next_story():
         bg(handler._handle_next)
+        return ('', 204)
+
+    @app.route('/story/prev', methods=['POST'])
+    def prev_story():
+        bg(handler._handle_prev)
         return ('', 204)
 
     # ---------- Music ----------
@@ -124,6 +184,11 @@ def create_app(handler, audio, eyes, leds, servos, motors):
         bg(handler._handle_next)
         return ('', 204)
 
+    @app.route('/music/prev', methods=['POST'])
+    def prev_music():
+        bg(handler._handle_prev)
+        return ('', 204)
+
     # ---------- Education ----------
     @app.route('/education/play', methods=['POST'])
     def edu_play():
@@ -140,6 +205,11 @@ def create_app(handler, audio, eyes, leds, servos, motors):
     @app.route('/education/next', methods=['POST'])
     def edu_next():
         bg(handler._handle_next)
+        return ('', 204)
+
+    @app.route('/education/prev', methods=['POST'])
+    def edu_prev():
+        bg(handler._handle_prev)
         return ('', 204)
 
     return app

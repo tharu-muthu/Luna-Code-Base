@@ -2,6 +2,7 @@ import time
 import random
 import math
 import threading
+import os
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 try:
@@ -11,6 +12,8 @@ try:
     HAS_DISPLAY = True
 except ImportError:
     HAS_DISPLAY = False
+
+from config import Config
 
 # Display dimensions for landscape mode
 WIDTH = 320
@@ -97,10 +100,27 @@ class RoboEyes:
         self.neutral_shift_start_time = 0
         self.neutral_shift_duration = 0.5
 
-        #added 
+        # Thread control flags
         self.running = False
         self.run = False
         self.update_thread = None
+
+        # Educational pause state — initialized here instead of only in edu_start()
+        self.is_paused = False
+        self.paused_time = None
+        self.accumulated_paused = 0.0
+
+        # Cache the font once to avoid repeated disk reads on Pi Zero 2W
+        self._cached_font = None
+        try:
+            self._cached_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 160
+            )
+        except OSError:
+            self._cached_font = ImageFont.load_default()
+
+        # Cache animal images to avoid repeated disk reads
+        self._animal_image_cache = {}
 
     def set_mood(self, mood):
         self.mood = mood
@@ -266,7 +286,9 @@ class RoboEyes:
 
     def set_neutral(self):
         self.set_mood("neutral")
-        self.toggle_auto_blink()
+        # FIX: Always ENABLE auto_blink, don't toggle (was toggling before,
+        # so every other call would disable blinking)
+        self.auto_blink = True
         self.update()
 
     def set_black(self):
@@ -280,10 +302,7 @@ class RoboEyes:
     def display_number(self, num):
         image = Image.new("RGB", (self.width, self.height), "black")
         draw = ImageDraw.Draw(image)
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 160)
-        except OSError:
-            font = ImageFont.load_default()
+        font = self._cached_font
         text = str(num)
         bbox = draw.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
@@ -293,13 +312,6 @@ class RoboEyes:
         draw.text((x, y), text, font=font, fill=(255, 255, 255))
         if not self.is_simulated and self.disp is not None:
             self.disp.image(image)
-
-    # def numbers(self, delay=1):
-    #     for num in range(1, 11):
-    #         self.display_number(num)
-    #         time.sleep(delay)
-
-
 
     def numbers(self):
         # (number, timestamp in seconds)
@@ -320,12 +332,12 @@ class RoboEyes:
 
         for num, target_time in timeline:
             # Wait until target time is reached
-            while (time.time() - start_time) < target_time:
-                time.sleep(0.01)  # Avoid high CPU usage
+            while self.get_elapsed_time(start_time) < target_time:
+                time.sleep(0.05)
                 if not self.run:
                     return
             if not self.run:
-                    return
+                return
             self.display_number(num)
 
 
@@ -337,10 +349,7 @@ class RoboEyes:
     def display_letter(self, letter):
         image = Image.new("RGB", (self.width, self.height), "black")
         draw = ImageDraw.Draw(image)
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 160)
-        except OSError:
-            font = ImageFont.load_default()
+        font = self._cached_font
         bbox = draw.textbbox((0, 0), letter, font=font)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
@@ -362,40 +371,42 @@ class RoboEyes:
         start_time = time.time()
 
         for letter, target_sec in timeline.items():
-            while time.time() - start_time < target_sec:
-                time.sleep(0.05)  # small wait until it's time to show the letter
+            while self.get_elapsed_time(start_time) < target_sec:
+                time.sleep(0.05)
                 if not self.run:
                     return
             if not self.run:
-                    return
+                return
             self.display_letter(letter)
 
 
-    def display_animal(self, name, delay=1):
+    def display_animal(self, name, delay=0):
+        """Display an animal image. Uses cache to avoid repeated disk reads."""
         try:
-            img_path = f"images/animals/{name}.png"
-            image = Image.open(img_path).convert("RGB")
-            image = ImageOps.fit(image, (239, 239), method=Image.LANCZOS)
-            background = Image.new("RGB", (self.width, self.height), "black")
-            x = (self.width - 239) // 2
-            y = (self.height - 239) // 2
-            background.paste(image, (x, y))
+            # Use absolute path via Config
+            img_path = os.path.join(Config.ANIMAL_IMAGE_DIR, f"{name}.png")
+
+            # Check cache first
+            if name in self._animal_image_cache:
+                background = self._animal_image_cache[name]
+            else:
+                image = Image.open(img_path).convert("RGB")
+                image = ImageOps.fit(image, (239, 239), method=Image.LANCZOS)
+                background = Image.new("RGB", (self.width, self.height), "black")
+                x = (self.width - 239) // 2
+                y = (self.height - 239) // 2
+                background.paste(image, (x, y))
+                self._animal_image_cache[name] = background
+
             if not self.is_simulated and self.disp is not None:
                 self.disp.image(background)
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
         except Exception as e:
             print(f"Error loading/displaying animal '{name}': {e}")
 
-    # def animals(self, delay=2):
-    #     animals = [
-    #         "dog", "cat", "cow", "bird", "pig", "horse", "wolf", "snake",
-    #         "frog", "whale", "owl", "sheep", "chicken", "bee", "monkey", "lion"
-    #     ]
-    #     for animal in animals:
-    #         self.display_animal(animal, delay)
-
-    def animals(self, delay=2):
-    # Timeline: animal name + time offset in seconds
+    def animals(self):
+        # Timeline: animal name + time offset in seconds
         timeline = [
             ("dog", 0),
             ("cat", 12),
@@ -419,17 +430,17 @@ class RoboEyes:
 
         for animal, target_offset in timeline:
             # Wait until it's the correct time to display
-            while time.time() - start_time < target_offset:
-                time.sleep(0.05)  # short sleep to avoid busy-wait
+            while self.get_elapsed_time(start_time) < target_offset:
+                time.sleep(0.05)
                 if not self.run:
                     return
             if not self.run:
                 return
-            self.display_animal(animal, delay=delay)
+            self.display_animal(animal)
 
 
     def music(self, duration):
-        self.display_animal(name="Music_Symbol", delay=duration)
+        self.display_animal(name="Music_Symbol", delay=0)
 
 
     def start(self):
@@ -443,15 +454,39 @@ class RoboEyes:
         """Stop the background update loop."""
         self.running = False
         if self.update_thread:
-            self.update_thread.join()
+            self.update_thread.join(timeout=2.0)
             self.update_thread = None
 
     def _update_loop(self):
         """Internal method that runs in a thread, continuously calling update()."""
         while self.running:
             self.update()
-            time.sleep(self.frame_interval)  # Use your existing frame interval (0.05s)
+            time.sleep(self.frame_interval)
+
     def edu_start(self):
         self.run = True
+        self.is_paused = False
+        self.paused_time = None
+        self.accumulated_paused = 0.0
+
     def edu_stop(self):
+        """Signal the educational display loop to exit.
+        Does NOT restart the eye loop - the caller is responsible for that."""
         self.run = False
+
+    def pause(self):
+        if not self.is_paused:
+            self.is_paused = True
+            self.paused_time = time.time()
+
+    def resume(self):
+        if self.is_paused:
+            self.accumulated_paused += time.time() - self.paused_time
+            self.is_paused = False
+            self.paused_time = None
+
+    def get_elapsed_time(self, start_time):
+        if self.is_paused:
+            return self.paused_time - start_time - self.accumulated_paused
+        else:
+            return time.time() - start_time - self.accumulated_paused

@@ -28,6 +28,12 @@ class EmotionManager(threading.Thread):
     def stop(self):
         self.running = False
 
+    def pause(self):
+        self.timeline.pause()
+
+    def resume(self):
+        self.timeline.resume()
+
     def _apply_emotion(self, emotion):
         print(f"[EmotionManager] Switching to emotion: {emotion}")
         # Display

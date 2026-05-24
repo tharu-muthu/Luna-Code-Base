@@ -41,7 +41,6 @@ class EmotionDetector:
         }
 
         try:
-            print(requests.__file__)
             response = requests.post(self.api_url, json=payload)
             data = response.json()
             faces = data["responses"][0].get("faceAnnotations")

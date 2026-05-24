@@ -65,6 +65,9 @@ class LEDController:
 
     def fade_to(self, r_target, g_target, b_target, steps=50, delay=0.02):
         for i in range(steps + 1):
+            # Early exit if music was stopped mid-fade
+            if not self.music_playing and self.music_thread is not None:
+                return
             r = int(r_target * i / steps)
             g = int(g_target * i / steps)
             b = int(b_target * i / steps)
@@ -85,25 +88,33 @@ class LEDController:
         def music_loop():
             while self.music_playing:
                 self.fade_to(100, 0, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 100, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 0, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(100, 100, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(100, 0, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 50, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
 
-        self.music_thread = threading.Thread(target=music_loop)
+        # FIX: Set daemon=True so thread doesn't block process exit
+        self.music_thread = threading.Thread(target=music_loop, daemon=True)
         self.music_thread.start()
 
     def stop_music(self):
         self.music_playing = False
         if self.music_thread:
-            self.music_thread.join()
+            # fade_to now checks music_playing, so join won't hang long
+            self.music_thread.join(timeout=2.0)
             self.music_thread = None
         self.turn_off()
 
