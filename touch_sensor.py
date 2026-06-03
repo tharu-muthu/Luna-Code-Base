@@ -1,14 +1,50 @@
-import RPi.GPIO as GPIO
+try:
+    import RPi.GPIO as GPIO
+except ImportError:
+    print("[Touch] RPi.GPIO not found. Entering Simulation Mode (dummy logging).")
+    
+    class DummyPWM:
+        def __init__(self, pin, frequency):
+            self.pin = pin
+            self.frequency = frequency
+        def start(self, duty_cycle):
+            pass
+        def ChangeDutyCycle(self, duty_cycle):
+            pass
+        def stop(self):
+            pass
+
+    class DummyGPIO:
+        BCM = "BCM"
+        OUT = "OUT"
+        IN = "IN"
+        LOW = 0
+        HIGH = 1
+        PUD_DOWN = "PUD_DOWN"
+        
+        def setmode(self, mode): pass
+        def setwarnings(self, state): pass
+        def setup(self, pins, direction, pull_up_down=None): pass
+        def output(self, pin, value): pass
+        def input(self, pin): return 0
+        def PWM(self, pin, frequency):
+            return DummyPWM(pin, frequency)
+        def cleanup(self): pass
+
+    GPIO = DummyGPIO()
+
 import time
 import threading
+import pygame
 from config import Config
 
 
 class TouchSensor:
-    def __init__(self, leds, eyes, servos):
+    def __init__(self, leds, eyes, servos, handler=None):
         self.leds = leds
         self.eyes = eyes
         self.servos = servos
+        self.handler = handler
         self.touch_pin = 4  # GPIO 4 (Physical Pin 7)
         self.cooldown = Config.TOUCH_COOLDOWN
         self.last_touch_time = 0
@@ -21,6 +57,23 @@ class TouchSensor:
         print("[TouchSensor] Ready on GPIO 4...")
         while True:
             if GPIO.input(self.touch_pin) == GPIO.HIGH:
+                # Ignore touch if the robot is sleeping!
+                if getattr(self.handler, "sleeping", False):
+                    time.sleep(0.5)
+                    continue
+
+                # Ignore touch if something is playing!
+                audio_playing = False
+                if self.handler and getattr(self.handler, "audio", None):
+                    try:
+                        audio_playing = self.handler.audio.is_playing or pygame.mixer.music.get_busy()
+                    except Exception:
+                        audio_playing = self.handler.audio.is_playing
+
+                if audio_playing:
+                    time.sleep(0.5)
+                    continue
+
                 now = time.time()
                 if now - self.last_touch_time >= self.cooldown:
                     self.last_touch_time = now

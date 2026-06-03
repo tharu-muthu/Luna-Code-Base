@@ -1,192 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Luna Robot Control</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Luna OS Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <!-- Twemoji (use CDN; for offline copy file locally and update src) -->
-  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      // Parse only elements with .tw to images (SVGs). Consistent across devices.
-      twemoji.parse(document.body, { className: 'emoji', folder: 'svg', ext: '.svg' });
-    });
-  </script>
+<body class="text-white min-h-screen flex flex-col font-sans antialiased">
 
-  <!-- Animated Menu Toggle -->
-  <button class="menu-toggle" id="menuToggle" aria-label="Open menu" onclick="toggleMenu()">
-    <span class="bar"></span><span class="bar"></span><span class="bar"></span>
-  </button>
-
-  <!-- Sidebar -->
-  <nav class="sidebar" id="sidebar" aria-label="Main">
-    <button class="nav-btn" data-target="main" onclick="selectTab('main')"><span class="tw">🏠</span> Main</button>
-    <button class="nav-btn" data-target="guidelines" onclick="selectTab('guidelines')"><span class="tw">📘</span> Guidelines</button>
-    <button class="nav-btn" data-target="movement" onclick="selectTab('movement')"><span class="tw">🕹️</span> Movement</button>
-    <button class="nav-btn" data-target="stories" onclick="selectTab('stories')"><span class="tw">📖</span> Stories</button>
-    <button class="nav-btn" data-target="music" onclick="selectTab('music')"><span class="tw">🎵</span> Song</button>
-    <button class="nav-btn" data-target="education" onclick="selectTab('education')"><span class="tw">🎓</span> Education</button>
-    <button class="nav-btn" data-target="camera" onclick="selectTab('camera')"><span class="tw">🎥</span> Camera</button>
+  <nav class="glass-panel sticky top-0 z-50 px-4 py-3 flex justify-between items-center border-b border-white/10 shadow-lg">
+    <div class="flex items-center gap-3">
+      <i data-lucide="bot" class="w-8 h-8 text-cyan-400"></i>
+      <h1 class="text-xl font-bold tracking-wider">LUNA<span class="text-cyan-400">OS</span></h1>
+    </div>
+    
+    <div class="flex gap-2 overflow-x-auto no-scrollbar">
+      <button class="nav-btn active px-4 py-2 rounded-xl text-sm font-semibold transition-all" data-target="drive">Drive &amp; Vision</button>
+      <button class="nav-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all" data-target="media">Stories &amp; Music</button>
+      <button class="nav-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all" data-target="education">Education</button>
+    </div>
   </nav>
 
-  <!-- Main -->
-  <section id="main" class="section active">
-    <div class="tab-cap">
-      <h1><span class="tw">🤖</span> Luna Robot Controller</h1>
-    </div>
-    <p class="subtitle"></p>
-    <div class="main-buttons stagger">
-      <button onclick="selectTab('guidelines')">Guidelines</button>
-      <button onclick="selectTab('movement')">Movement</button>
-      <button onclick="selectTab('stories')">Stories</button>
-      <button onclick="selectTab('music')">Song</button>
-      <button onclick="selectTab('education')">Education</button>
-      <button onclick="selectTab('camera')">Camera Feed</button>
-    </div>
-  </section>
+  <main class="flex-1 container mx-auto p-4 max-w-5xl relative z-10 pb-28">
 
-  <!-- Guidelines -->
-  <section id="guidelines" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">📘</span> How to Use Luna</h2></div>
-    <div class="control-space"></div>
-    <div class="guideline-topic">
-      <h3><span class="tw">🔌</span> Powering the Robot</h3>
-      <p>Use a safe power source and keep cables tidy.</p>
-    </div>
-    <div class="guideline-topic">
-      <h3><span class="tw">🌐</span> Network Connection</h3>
-      <p>Connect both robot and phone/computer to the same Wi‑Fi.</p>
-    </div>
-    <div class="guideline-topic">
-      <h3><span class="tw">🕹️</span> Control Panel</h3>
-      <p>Use the tabs to move, play stories and music, or start the camera.</p>
-    </div>
-    <div class="guideline-topic">
-      <h3><span class="tw">📹</span> Using Camera</h3>
-      <p>Press “Start Feed” to see the live view. Press “Stop Feed” to free the camera.</p>
-    </div>
-  </section>
-
-  <!-- Movement -->
-  <section id="movement" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">🕹️</span> Drive Luna</h2></div>
-    <div class="control-space"></div>
-    <div class="button-grid stagger">
-      <button class="up"    onclick="sendMove('forward')"><span class="tw">⬆️</span></button>
-      <button class="left"  onclick="sendMove('left')"><span class="tw">⬅️</span></button>
-      <button class="stop"  onclick="sendMove('stop')"><span class="tw">⏹️</span></button>
-      <button class="right" onclick="sendMove('right')"><span class="tw">➡️</span></button>
-      <button class="down"  onclick="sendMove('backward')"><span class="tw">⬇️</span></button>
-    </div>
-  </section>
-
-  <!-- Stories -->
-  <section id="stories" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">📖</span> Story Time</h2></div>
-
-    <div class="control-bar">
-      <div class="control-group-left">
-        <button class="icon-btn" title="Volume Down" onclick="volumeDown()"><span class="tw">🔉</span></button>
-        <button class="icon-btn" title="Volume Up"   onclick="volumeUp()"><span class="tw">🔊</span></button>
-      </div>
-      <span class="control-label">Controls</span>
-      <div class="control-group-right">
-        <button class="icon-btn" title="Stop" onclick="stopStory()"><span class="tw">⏹️</span></button>
-        <button class="icon-btn" title="Next" onclick="nextStory()"><span class="tw">⏭️</span></button>
-      </div>
-    </div>
-
-    <div class="story-buttons-vertical stagger">
-      <button onclick="playStory('story1')">Story 1</button>
-      <button onclick="playStory('story2')">Story 2</button>
-      <button onclick="playStory('story3')">Story 3</button>
-      <button onclick="playStory('story4')">Story 4</button>
-      <button onclick="playStory('story5')">Story 5</button>
-      <button onclick="playStory('story6')">Story 6</button>
-      <button onclick="playStory('story7')">Story 7</button>
-      <button onclick="playStory('story8')">Story 8</button>
-      <button onclick="playStory('story9')">Story 9</button>
-      <button onclick="playStory('story10')">Story 10</button>
-    </div>
-  </section>
-
-  <!-- Music -->
-  <section id="music" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">🎵</span> Song Player</h2></div>
-
-    <div class="control-bar">
-      <div class="control-group-left">
-        <button class="icon-btn" title="Volume Down" onclick="volumeDown()"><span class="tw">🔉</span></button>
-        <button class="icon-btn" title="Volume Up"   onclick="volumeUp()"><span class="tw">🔊</span></button>
-      </div>
-      <span class="control-label">Controls</span>
-      <div class="control-group-right">
-        <button class="icon-btn" title="Stop Music" onclick="stopMusic()"><span class="tw">⏹️</span></button>
-        <button class="icon-btn" title="Next Track" onclick="nextMusic()"><span class="tw">⏭️</span></button>
-      </div>
-    </div>
-
-    <div class="story-buttons-vertical stagger">
-      <button onclick="playMusic('music1')">Song 1</button>
-      <button onclick="playMusic('music2')">Song 2</button>
-      <button onclick="playMusic('music3')">Song 3</button>
-      <button onclick="playMusic('music4')">Song 4</button>
-      <button onclick="playMusic('music5')">Song 5</button>
-      <button onclick="playMusic('music6')">Song 6</button>
-      <button onclick="playMusic('music7')">Song 7</button>
-      <button onclick="playMusic('music8')">Song 8</button>
-      <button onclick="playMusic('music9')">Song 9</button>
-      <button onclick="playMusic('music10')">Song 10</button>
-    </div>
-  </section>
-
-  <!-- Education -->
-  <section id="education" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">🎓</span> Learn & Play</h2></div>
-
-    <div class="control-bar">
-      <div class="control-group-left">
-        <button class="icon-btn" title="Volume Down" onclick="volumeDown()"><span class="tw">🔉</span></button>
-        <button class="icon-btn" title="Volume Up"   onclick="volumeUp()"><span class="tw">🔊</span></button>
-      </div>
-      <span class="control-label">Controls</span>
-      <div class="control-group-right">
-        <button class="icon-btn" title="Stop" onclick="stopStory()"><span class="tw">⏹️</span></button>
-        <button class="icon-btn" title="Next" onclick="nextStory()"><span class="tw">⏭️</span></button>
-      </div>
-
+    <!-- ======== Drive & Vision ======== -->
+    <section id="drive" class="tab-section active flex flex-col lg:flex-row gap-6">
+      
+      <div class="glass-panel flex-1 rounded-3xl p-5 border border-white/10 shadow-2xl flex flex-col gap-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-lg font-bold flex items-center gap-2">
+            <i data-lucide="video" class="w-5 h-5 text-cyan-400"></i> Vision Matrix
+          </h2>
+          <div class="flex gap-2">
+            <button onclick="startFeed()" class="bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 px-3 py-1 rounded-lg text-sm hover:bg-cyan-500/40 transition">Start</button>
+            <button onclick="stopFeed()" class="bg-red-500/20 text-red-300 border border-red-500/50 px-3 py-1 rounded-lg text-sm hover:bg-red-500/40 transition">Stop</button>
           </div>
+        </div>
+        <div class="w-full aspect-video bg-black/60 rounded-2xl overflow-hidden border border-white/5 relative shadow-inner">
+          <img id="stream" src="" class="w-full h-full object-cover" alt="Camera Feed Offline">
+        </div>
+      </div>
 
-    <div class="story-buttons-vertical stagger">
-      <button onclick="playEducation('alphabet')">Alphabet</button>
-      <button onclick="playEducation('numbers')">Numbers</button>
-      <button onclick="playEducation('animals')">Animals</button>
-    </div>
-  </section>
+      <div class="glass-panel lg:w-80 rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col items-center justify-center gap-6">
+        <h2 class="text-lg font-bold self-start flex items-center gap-2">
+            <i data-lucide="gamepad-2" class="w-5 h-5 text-purple-400"></i> Kinetic Drive
+        </h2>
+        
+        <div class="grid grid-cols-3 gap-3">
+          <div></div>
+          <button class="control-btn text-cyan-300" onmousedown="sendMove('forward')" onmouseup="sendMove('stop')" ontouchstart="sendMove('forward')" ontouchend="sendMove('stop')">
+            <i data-lucide="chevron-up" class="w-8 h-8"></i>
+          </button>
+          <div></div>
+          
+          <button class="control-btn text-cyan-300" onmousedown="sendMove('left')" onmouseup="sendMove('stop')" ontouchstart="sendMove('left')" ontouchend="sendMove('stop')">
+            <i data-lucide="chevron-left" class="w-8 h-8"></i>
+          </button>
+          <button class="control-btn bg-red-500/20 border-red-500/30 text-red-400 hover:bg-red-500/40" onclick="sendMove('stop')">
+            <i data-lucide="square" class="w-6 h-6 fill-current"></i>
+          </button>
+          <button class="control-btn text-cyan-300" onmousedown="sendMove('right')" onmouseup="sendMove('stop')" ontouchstart="sendMove('right')" ontouchend="sendMove('stop')">
+            <i data-lucide="chevron-right" class="w-8 h-8"></i>
+          </button>
+          
+          <div></div>
+          <button class="control-btn text-cyan-300" onmousedown="sendMove('backward')" onmouseup="sendMove('stop')" ontouchstart="sendMove('backward')" ontouchend="sendMove('stop')">
+            <i data-lucide="chevron-down" class="w-8 h-8"></i>
+          </button>
+          <div></div>
+        </div>
+      </div>
+    </section>
 
-  <!-- Camera -->
-  <section id="camera" class="section hidden">
-    <div class="tab-cap"><h2><span class="tw">🎥</span> Camera Feed</h2></div>
-    <div class="control-space"></div>
-    <div class="camera-container float">
-      <img id="stream" src="" alt="Press Start Feed">
-    </div>
-    <div class="main-buttons stagger">
-      <button onclick="startFeed()">Start Feed</button>
-      <button onclick="stopFeed()">Stop Feed</button>
+    <!-- ======== Stories & Music ======== -->
+    <section id="media" class="tab-section hidden grid grid-cols-1 md:grid-cols-2 gap-6">
+      
+      <div class="glass-panel rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col gap-4">
+        <h2 class="text-lg font-bold flex items-center gap-2">
+          <i data-lucide="book-open" class="w-5 h-5 text-amber-400"></i> Story Library
+        </h2>
+        <div class="grid grid-cols-2 gap-3 overflow-y-auto max-h-96 pr-2 custom-scrollbar">
+          <button class="action-btn" onclick="playStory('story1')">Story 1</button>
+          <button class="action-btn" onclick="playStory('story2')">Story 2</button>
+          <button class="action-btn" onclick="playStory('story3')">Story 3</button>
+          <button class="action-btn" onclick="playStory('story4')">Story 4</button>
+          <button class="action-btn" onclick="playStory('story5')">Story 5</button>
+          <button class="action-btn" onclick="playStory('story6')">Story 6</button>
+          <button class="action-btn" onclick="playStory('story7')">Story 7</button>
+          <button class="action-btn" onclick="playStory('story8')">Story 8</button>
+          <button class="action-btn" onclick="playStory('story9')">Story 9</button>
+          <button class="action-btn" onclick="playStory('story10')">Story 10</button>
+        </div>
+      </div>
+
+      <div class="glass-panel rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col gap-4">
+        <h2 class="text-lg font-bold flex items-center gap-2">
+          <i data-lucide="music" class="w-5 h-5 text-indigo-400"></i> Music
+        </h2>
+        <div class="grid grid-cols-2 gap-3 overflow-y-auto max-h-96 pr-2 custom-scrollbar">
+          <button class="action-btn" onclick="playMusic('music1')">Music 1</button>
+          <button class="action-btn" onclick="playMusic('music2')">Music 2</button>
+          <button class="action-btn" onclick="playMusic('music3')">Music 3</button>
+          <button class="action-btn" onclick="playMusic('music4')">Music 4</button>
+          <button class="action-btn" onclick="playMusic('music5')">Music 5</button>
+          <button class="action-btn" onclick="playMusic('music6')">Music 6</button>
+          <button class="action-btn" onclick="playMusic('music7')">Music 7</button>
+          <button class="action-btn" onclick="playMusic('music8')">Music 8</button>
+          <button class="action-btn" onclick="playMusic('music9')">Music 9</button>
+          <button class="action-btn" onclick="playMusic('music10')">Music 10</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== Education ======== -->
+    <section id="education" class="tab-section hidden glass-panel rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col gap-6 max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold flex items-center gap-2">
+          <i data-lucide="graduation-cap" class="w-5 h-5 text-green-400"></i> Learning Modules
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button class="action-btn py-8 text-lg flex flex-col gap-3" onclick="playEducation('alphabet')">
+          <i data-lucide="case-sensitive" class="w-10 h-10 text-cyan-300"></i> Alphabet
+        </button>
+        <button class="action-btn py-8 text-lg flex flex-col gap-3" onclick="playEducation('numbers')">
+          <i data-lucide="binary" class="w-10 h-10 text-purple-300"></i> Numbers
+        </button>
+        <button class="action-btn py-8 text-lg flex flex-col gap-3" onclick="playEducation('animals')">
+          <i data-lucide="paw-print" class="w-10 h-10 text-amber-300"></i> Animals
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======== Floating Playback Card ======== -->
+  <div id="playback-bar" class="playback-bar hidden relative">
+    <!-- Close button to dismiss/hide the card -->
+    <button class="absolute top-3 right-3 text-white/40 hover:text-white transition" onclick="hidePlaybackBar()">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+
+    <!-- Row 1: icon + NOW PLAYING / track name -->
+    <div class="playback-info">
+      <div class="playback-icon" id="playback-icon">
+        <i data-lucide="book-open" class="w-5 h-5 text-cyan-400"></i>
+      </div>
+      <div class="playback-text">
+        <span class="playback-label">Now Playing</span>
+        <span class="playback-title" id="playback-title">Nothing playing</span>
+      </div>
     </div>
 
-    <div class="button-grid stagger" style="margin-top:20px;">
-      <button class="up"    onclick="sendMove('forward')"><span class="tw">⬆️</span></button>
-      <button class="left"  onclick="sendMove('left')"><span class="tw">⬅️</span></button>
-      <button class="stop"  onclick="sendMove('stop')"><span class="tw">⏹️</span></button>
-      <button class="right" onclick="sendMove('right')"><span class="tw">➡️</span></button>
-      <button class="down"  onclick="sendMove('backward')"><span class="tw">⬇️</span></button>
+    <!-- Row 2: Playback Controls (Prev, Play/Pause toggle, Next) -->
+    <div class="playback-controls">
+      <button class="pb-btn" onclick="prevCurrent()" title="Previous">
+        <i data-lucide="skip-back" class="w-5 h-5"></i>
+      </button>
+      
+      <!-- Play/Pause toggle button -->
+      <button id="play-pause-btn" class="pb-btn pb-btn-playpause" onclick="togglePlayPause()" title="Pause">
+        <i id="play-pause-icon" data-lucide="pause" class="w-5 h-5 fill-current"></i>
+      </button>
+      
+      <button class="pb-btn" onclick="nextCurrent()" title="Next">
+        <i data-lucide="skip-forward" class="w-5 h-5"></i>
+      </button>
     </div>
-  </section>
+
+    <!-- Row 3: Volume Indicator & Control -->
+    <div class="volume-container">
+      <button class="vol-btn" onclick="volumeDown()" title="Volume Down">
+        <i data-lucide="volume-1" class="w-4 h-4"></i>
+      </button>
+      
+      <div class="volume-progress-bar">
+        <div id="volume-indicator-bar" class="volume-progress-fill" style="width: 50%;"></div>
+      </div>
+      <span id="volume-text" class="volume-text">50%</span>
+      
+      <button class="vol-btn" onclick="volumeUp()" title="Volume Up">
+        <i data-lucide="volume-2" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
 
   <script src="script.js"></script>
 </body>

@@ -17,17 +17,29 @@ class CommandHandler:
         self.motors = motors
         self.detector = emotion_detector
         self.timeline_thread = None
+        self.sleeping = False
+
+        # Track current educational subtype for next/prev
+        self._current_edu_type = None
+        self._edu_display_thread = None
 
         self.number_map = {
             "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
             "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
         }
 
+        # Ordered list for educational next/prev cycling
+        self._edu_types = ["alphabet", "numbers", "animals"]
+
     # =========================
     # Core Command Dispatcher
     # =========================
     def handle(self, intent, slots):
-        # print(f"[Command] Intent: {intent}, Slots: {slots}")
+        # If sleeping, only allow the "wake" intent!
+        if self.sleeping:
+            if intent == "wake":
+                self._handle_wake_up()
+            return
 
         # Volume control
         if intent == "volume":
@@ -55,6 +67,21 @@ class CommandHandler:
         # Next
         if intent == "next":
             self._handle_next()
+            return
+
+        # Previous
+        if intent in ("prev", "previous"):
+            self._handle_prev()
+            return
+
+        # Pause
+        if intent == "pause":
+            self._handle_pause()
+            return
+
+        # Resume
+        if intent == "resume":
+            self._handle_resume()
             return
 
         # Navigation
@@ -139,12 +166,7 @@ class CommandHandler:
         self.leds.music()
 
         def on_finish():
-            self.leds.stop_music()
-            self.leds.set_neutral()
-            self.eyes.set_mood("neutral")
-            self.eyes.start()
-            
-            self.audio.play_feedback("playback_finished", wait=True)
+            self._on_playback_finish()
 
         self.audio.play(
             song_file,
@@ -175,8 +197,6 @@ class CommandHandler:
         if type_ == "story":
             self.eyes.start()
             self._start_emotion_timeline(number)
-
-        if type_ == "story":
             self.audio.play(path, category="story", index=number, mode="random", callback=self._on_playback_finish)
         else:
             self.eyes.music(Config.MOTOR_RUN_DURATION)
@@ -192,42 +212,55 @@ class CommandHandler:
             print(f"[Edu] Not found: {file}")
             return
         
+        # Stop any currently running educational display thread cleanly
+        self.eyes.edu_stop()
+        # Wait for old display thread to exit
+        if self._edu_display_thread and self._edu_display_thread.is_alive():
+            self._edu_display_thread.join(timeout=1.0)
+        self._edu_display_thread = None
+
         self.eyes.stop()
         self.eyes.edu_start()
+        self.leds.set_neutral() # Restore active friendly LEDs!
+
+        # Track the educational subtype for next/prev cycling
+        self._current_edu_type = type_
 
         self.audio.play_feedback(feedback, wait=True)
         time.sleep(Config.FEEDBACK_DELAY)
 
         def on_finish():
+            """Called when audio playback ends naturally."""
+            self.eyes.edu_stop()
+            # Wait for display thread to exit before restarting eye loop
+            if self._edu_display_thread and self._edu_display_thread.is_alive():
+                self._edu_display_thread.join(timeout=2.0)
+            self._edu_display_thread = None
             self.eyes.set_mood("neutral")
             self.eyes.start()
-            self.eyes.edu_stop()
             self.audio.play_feedback("playback_finished", wait=True)
 
-        # added to play the audio simultaneously
+        # Start audio in a daemon thread
         threading.Thread(target=self.audio.play, args=(file,), kwargs={
-            "category": "education", "mode": "random", "callback": on_finish
+            "category": "education", "mode": "specific", "callback": on_finish
         }, daemon=True).start()
 
-        # Set display only (neutral LEDs)
-        if type_ == "alphabet":
-            self.eyes.alphabet()
-        elif type_ == "numbers":
-            self.eyes.numbers()
-        elif type_ == "animals":
-            self.eyes.animals()
+        # Start display loop in a separate daemon thread (NOT blocking the caller)
+        display_func = {
+            "alphabet": self.eyes.alphabet,
+            "numbers": self.eyes.numbers,
+            "animals": self.eyes.animals,
+        }.get(type_)
+
+        if display_func:
+            self._edu_display_thread = threading.Thread(target=display_func, daemon=True)
+            self._edu_display_thread.start()
 
 
     # =========================
     # Navigation
     # =========================
-    def _handle_navigation(self, direction):
-        sound_map = {
-            "forward": "coming_fowrd",
-            "backward": "going_backward",
-            "left": "turning_left",
-            "right": "turning_right"
-        }
+    def execute_movement(self, direction, speak=True):
         motor_map = {
             "forward": self.motors.forward,
             "backward": self.motors.backward,
@@ -235,26 +268,48 @@ class CommandHandler:
             "right": self.motors.turn_right
         }
 
-        if direction not in sound_map or direction not in motor_map:
+        if direction not in motor_map:
             return
 
-        self.audio.play_feedback(sound_map[direction], wait=True)
-        time.sleep(Config.FEEDBACK_DELAY)
+        if speak:
+            sound_map = {
+                "forward": "coming_fowrd",
+                "backward": "going_backward",
+                "left": "turning_left",
+                "right": "turning_right"
+            }
+            if direction in sound_map:
+                self.audio.play_feedback(sound_map[direction], wait=True)
+                time.sleep(Config.FEEDBACK_DELAY)
+
+        # 1 wave cycle takes 1.2s. MOTOR_RUN_DURATION is 3.0s.
+        # Trigger exactly 2 cycles (2.4s total wave duration) to align with wheels
+        cycles = int(Config.MOTOR_RUN_DURATION / 1.2)
 
         threading.Thread(target=motor_map[direction], daemon=True).start()
-        threading.Thread(target=self.servos.wave, daemon=True).start()
+        threading.Thread(target=self.servos.wave, args=(cycles,), daemon=True).start()
+
+    def _handle_navigation(self, direction):
+        self.execute_movement(direction, speak=True)
 
     # =========================
     # Stop, Next, Sleep
     # =========================
     def _handle_stop(self):
-        if not self.audio.is_playing:
+        if not self.audio.is_playing and not self.audio.is_paused:
             print("[Stop] Nothing playing")
             return
+
         self.audio.stop()
         self._stop_timeline()
         self.leds.stop_music()
+
+        # Stop educational display and wait for its thread to exit
         self.eyes.edu_stop()
+        if self._edu_display_thread and self._edu_display_thread.is_alive():
+            self._edu_display_thread.join(timeout=2.0)
+        self._edu_display_thread = None
+
         self.eyes.stop()
         self.leds.set_neutral()
         self.servos.set_neutral()
@@ -264,17 +319,27 @@ class CommandHandler:
         self.audio.play_feedback("playback_stopped", wait=True)
 
     def _handle_next(self):
-        if not self.audio.is_playing:
+        # Take a thread-safe snapshot BEFORE stopping anything
+        state = self.audio.get_state_snapshot()
+        if not state["playing"] and not state["paused"]:
             print("[Next] Nothing playing")
             return
 
-        last_type = self.audio.current_category
-        last_index = self.audio.last_index
-        last_mode = self.audio.last_play_mode
+        last_type = state["category"]
+        last_index = state["index"]
+        last_mode = state["mode"]
 
         self.audio.stop()
         self._stop_timeline()
         self.leds.stop_music()
+
+        # Stop educational display and wait for its thread to exit
+        self.eyes.edu_stop()
+        if self._edu_display_thread and self._edu_display_thread.is_alive():
+            self._edu_display_thread.join(timeout=2.0)
+        self._edu_display_thread = None
+
+        self.leds.set_neutral()
 
         time.sleep(Config.FEEDBACK_DELAY)
         self.audio.play_feedback("playback_stopped", wait=True)
@@ -282,7 +347,16 @@ class CommandHandler:
         self.audio.play_feedback("playback_switching", wait=True)
         time.sleep(Config.FEEDBACK_DELAY)
 
-        if last_mode == "specific":
+        if last_type == "education":
+            # Cycle to next educational type in order
+            if self._current_edu_type and self._current_edu_type in self._edu_types:
+                idx = self._edu_types.index(self._current_edu_type)
+                next_type = self._edu_types[(idx + 1) % len(self._edu_types)]
+            else:
+                next_type = random.choice(self._edu_types)
+            self._play_educational(next_type)
+
+        elif last_mode == "specific":
             next_index = last_index + 1
             if last_type == "story":
                 path = os.path.join(Config.STORIES_DIR, f"story_{next_index}.mp3")
@@ -300,13 +374,95 @@ class CommandHandler:
         elif last_mode == "random":
             if last_type in ["story", "song"]:
                 self._play_random(last_type)
-            elif last_type == "education":
-                self._play_educational(random.choice(["alphabet", "numbers", "animals"]))
+
+    def _handle_prev(self):
+        # Take a thread-safe snapshot BEFORE stopping anything
+        state = self.audio.get_state_snapshot()
+        if not state["playing"] and not state["paused"]:
+            print("[Prev] Nothing playing")
+            return
+
+        last_type = state["category"]
+        last_index = state["index"]
+        last_mode = state["mode"]
+
+        self.audio.stop()
+        self._stop_timeline()
+        self.leds.stop_music()
+
+        # Stop educational display and wait for its thread to exit
+        self.eyes.edu_stop()
+        if self._edu_display_thread and self._edu_display_thread.is_alive():
+            self._edu_display_thread.join(timeout=2.0)
+        self._edu_display_thread = None
+
+        self.leds.set_neutral()
+
+        time.sleep(Config.FEEDBACK_DELAY)
+        self.audio.play_feedback("playback_stopped", wait=True)
+        time.sleep(Config.FEEDBACK_DELAY)
+        self.audio.play_feedback("playback_switching", wait=True)
+        time.sleep(Config.FEEDBACK_DELAY)
+
+        if last_type == "education":
+            # Cycle to previous educational type in order
+            if self._current_edu_type and self._current_edu_type in self._edu_types:
+                idx = self._edu_types.index(self._current_edu_type)
+                prev_type = self._edu_types[(idx - 1) % len(self._edu_types)]
+            else:
+                prev_type = random.choice(self._edu_types)
+            self._play_educational(prev_type)
+
+        elif last_mode == "specific":
+            prev_index = last_index - 1
+            if prev_index < 1:
+                self.audio.play_feedback("no_file_to_switch", wait=True)
+                return
+            if last_type == "story":
+                path = os.path.join(Config.STORIES_DIR, f"story_{prev_index}.mp3")
+                if os.path.exists(path):
+                    self._play_story(prev_index, mode="specific")
+                else:
+                    self.audio.play_feedback("no_file_to_switch", wait=True)
+            elif last_type == "song":
+                path = os.path.join(Config.SONGS_DIR, f"song_{prev_index}.mp3")
+                if os.path.exists(path):
+                    self._play_song(prev_index, mode="specific")
+                else:
+                    self.audio.play_feedback("no_file_to_switch", wait=True)
+
+        elif last_mode == "random":
+            if last_type in ["story", "song"]:
+                self._play_random(last_type)
+
+    def _handle_pause(self):
+        self._handle_pause_internal()
+
+    def _handle_pause_internal(self):
+        self.audio.pause()
+        if self.timeline_thread:
+            self.timeline_thread.pause()
+        if hasattr(self.eyes, "pause"):
+            self.eyes.pause()
+
+    def _handle_resume(self):
+        self._handle_resume_internal()
+
+    def _handle_resume_internal(self):
+        self.audio.resume()
+        if self.timeline_thread:
+            self.timeline_thread.resume()
+        if hasattr(self.eyes, "resume"):
+            self.eyes.resume()
 
     def _handle_sleep(self):
         self.sleeping = True
         self.audio.stop()
         self._stop_timeline()
+        self.eyes.edu_stop()
+        if self._edu_display_thread and self._edu_display_thread.is_alive():
+            self._edu_display_thread.join(timeout=2.0)
+        self._edu_display_thread = None
         self.eyes.stop()
         self.eyes.set_black()
         self.leds.turn_off()
@@ -314,7 +470,7 @@ class CommandHandler:
         self.audio.play_feedback("going_to_sleep", wait=True)
 
     def _handle_wake_up(self):
-        if getattr(self, "sleeping", False):  # default False if not set yet
+        if self.sleeping:
             self.eyes.set_neutral()
             self.leds.set_neutral()
             self.servos.set_neutral()
@@ -324,9 +480,10 @@ class CommandHandler:
 
 
     def _on_playback_finish(self):
+        """Unified callback for when any playback finishes naturally."""
         self._stop_timeline()
-        self.eyes.set_mood("neutral")
         self.leds.stop_music()
+        self.eyes.set_mood("neutral")
         self.eyes.start()
         self.leds.set_neutral()
         self.servos.set_neutral()
@@ -336,6 +493,13 @@ class CommandHandler:
     # Emotion Detection
     # =========================
     def _handle_emotion_detection(self):
+        # Stop streaming if active to prevent camera resource busy conflict
+        if hasattr(self, "check_and_stop_stream"):
+            was_streaming = self.check_and_stop_stream()
+            if was_streaming:
+                print("[Emotion] Web video stream paused for photo capture.")
+                time.sleep(1.0) # Wait for camera hardware resources to be fully released
+
         self.audio.play_feedback("E_detection", wait=True)
         emotion = self.detector.get_emotion()
         print(f"[Facial Emotion] {emotion}")
@@ -368,5 +532,5 @@ class CommandHandler:
     def _stop_timeline(self):
         if self.timeline_thread and self.timeline_thread.is_alive():
             self.timeline_thread.stop()
-            self.timeline_thread.join()
+            self.timeline_thread.join(timeout=2.0)
         self.timeline_thread = None

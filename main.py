@@ -8,8 +8,8 @@ from emotion_manager import EmotionManager
 
 from display import RoboEyes
 from led_emotions import LEDController
-from servoNewFunction import ServoController
-from gearNewFunction import MotorController
+from servo_controller import ServoController
+from motor_controller import MotorController
 from touch_sensor import TouchSensor
 
 from audio_player import AudioPlayer
@@ -46,7 +46,7 @@ def initialize_components():
     voice = VoiceController(handler, audio)
 
     # Touch sensor thread
-    touch_sensor = TouchSensor(leds, eyes, servos)
+    touch_sensor = TouchSensor(leds, eyes, servos, handler)
     threading.Thread(target=touch_sensor.listen_for_touch, daemon=True).start()
 
     # RETURN EVERYTHING we need for the web server
@@ -59,8 +59,27 @@ def main():
 
         # ---- Start Web API (same process, shared objects) ----
         app = create_app(handler, audio, eyes, leds, servos, motors)
-        threading.Thread(target=lambda: app.run(host="0.0.0.0", port=9000), daemon=True).start()
-        print("[WEB] Control UI running on http://<pi-ip>:9000")
+
+        def run_web():
+            try:
+                app.run(
+                    host="0.0.0.0",
+                    port=9000,
+                    use_reloader=False,  # prevents double-process / port conflict bug
+                    threaded=True,
+                    debug=False
+                )
+            except PermissionError:
+                print("[WEB] ERROR - port 9000 requires root or is blocked.")
+            except OSError as e:
+                print(f"[WEB] ERROR - could not bind port 9000: {e}")
+                print("[WEB] Fix: sudo fuser -k 9000/tcp  then restart.")
+            except Exception as e:
+                print(f"[WEB] Unexpected error: {e}")
+
+        threading.Thread(target=run_web, name="flask-web", daemon=True).start()
+        print("[WEB] Control UI starting on http://luna.local:9000 ...")
+
 
         # ---- Start voice loop (blocking) ----
         voice_controller.listen_forever()
@@ -71,6 +90,18 @@ def main():
     finally:
         try:
             eyes.stop()
+        except:
+            pass
+        try:
+            leds.cleanup()
+        except:
+            pass
+        try:
+            motors.stop()
+        except:
+            pass
+        try:
+            servos.set_neutral()
         except:
             pass
         pygame.quit()

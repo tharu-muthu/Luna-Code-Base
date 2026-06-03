@@ -1,5 +1,6 @@
 import queue
 import time
+import collections
 import numpy as np
 import sounddevice as sd
 from pvporcupine import create as create_porcupine
@@ -15,7 +16,10 @@ class VoiceController:
 
         self.input_sample_rate = 44100
         self.target_sample_rate = 16000
-        self.raw_audio_buffer = np.array([], dtype=np.int16)
+
+        # FIX: Use deque instead of np.concatenate to avoid O(n²) copying
+        self._raw_buffer = collections.deque()
+        self._raw_buffer_len = 0
 
         self.command_mode = False
         self.last_wake_time = 0
@@ -25,6 +29,11 @@ class VoiceController:
         # Activation state
         self.first_activation = True
         self.is_sleeping = False
+
+        # Pre-compute resampling indices once (never change)
+        self._input_samples_needed = int(512 * (self.input_sample_rate / self.target_sample_rate))
+        self._resample_indices = np.linspace(0, self._input_samples_needed, 512).astype(np.float64)
+        self._source_indices = np.arange(self._input_samples_needed, dtype=np.float64)
 
         # Initialize Porcupine (wake word)
         self.porcupine = create_porcupine(
@@ -51,20 +60,37 @@ class VoiceController:
         if status:
             print(f"[Voice] Audio status: {status}")
 
-        self.raw_audio_buffer = np.concatenate((self.raw_audio_buffer, indata[:, 0]))
+        # Append samples to deque (O(1) per call, avoids np.concatenate copying)
+        samples = indata[:, 0].copy()
+        self._raw_buffer.append(samples)
+        self._raw_buffer_len += len(samples)
 
-        input_samples_needed = int(512 * (self.input_sample_rate / self.target_sample_rate))
+        while self._raw_buffer_len >= self._input_samples_needed:
+            # Collect enough samples from the deque
+            collected = []
+            remaining = self._input_samples_needed
+            while remaining > 0:
+                front = self._raw_buffer[0]
+                if len(front) <= remaining:
+                    collected.append(self._raw_buffer.popleft())
+                    remaining -= len(front)
+                else:
+                    # Split: take what we need, leave the rest
+                    collected.append(front[:remaining])
+                    self._raw_buffer[0] = front[remaining:]
+                    remaining = 0
 
-        while len(self.raw_audio_buffer) >= input_samples_needed:
-            chunk = self.raw_audio_buffer[:input_samples_needed]
+            chunk = np.concatenate(collected)
+            self._raw_buffer_len -= self._input_samples_needed
+
+            # Resample using pre-computed indices
             resampled = np.interp(
-                np.linspace(0, len(chunk), 512),
-                np.arange(len(chunk)),
+                self._resample_indices,
+                self._source_indices,
                 chunk
             ).astype(np.int16)
 
             self.audio_queue.put(resampled)
-            self.raw_audio_buffer = self.raw_audio_buffer[input_samples_needed:]
 
     def listen_forever(self):
         print("[VoiceController] Say 'Hey Luna' to wake...")
@@ -91,7 +117,7 @@ class VoiceController:
                 # Wake word detection
                 keyword_index = self.porcupine.process(pcm)
                 if keyword_index >= 0:
-                    print("?? Wake word detected: 'Hey Luna'")
+                    print("🎤 Wake word detected: 'Hey Luna'")
                     self.command_mode = True
                     self.last_wake_time = time.time()
 

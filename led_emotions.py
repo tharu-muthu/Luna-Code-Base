@@ -1,4 +1,37 @@
-import RPi.GPIO as GPIO
+try:
+    import RPi.GPIO as GPIO
+except ImportError:
+    print("[LED] RPi.GPIO not found. Entering Simulation Mode (dummy logging).")
+    
+    class DummyPWM:
+        def __init__(self, pin, frequency):
+            self.pin = pin
+            self.frequency = frequency
+        def start(self, duty_cycle):
+            pass
+        def ChangeDutyCycle(self, duty_cycle):
+            pass
+        def stop(self):
+            pass
+
+    class DummyGPIO:
+        BCM = "BCM"
+        OUT = "OUT"
+        LOW = 0
+        HIGH = 1
+        PUD_DOWN = "PUD_DOWN"
+        
+        def setmode(self, mode): pass
+        def setwarnings(self, state): pass
+        def setup(self, pins, direction, pull_up_down=None): pass
+        def output(self, pin, value): pass
+        def input(self, pin): return 0
+        def PWM(self, pin, frequency):
+            return DummyPWM(pin, frequency)
+        def cleanup(self): pass
+
+    GPIO = DummyGPIO()
+
 import time
 import threading
 
@@ -32,6 +65,9 @@ class LEDController:
 
     def fade_to(self, r_target, g_target, b_target, steps=50, delay=0.02):
         for i in range(steps + 1):
+            # Early exit if music was stopped mid-fade
+            if not self.music_playing and self.music_thread is not None:
+                return
             r = int(r_target * i / steps)
             g = int(g_target * i / steps)
             b = int(b_target * i / steps)
@@ -52,25 +88,33 @@ class LEDController:
         def music_loop():
             while self.music_playing:
                 self.fade_to(100, 0, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 100, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 0, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(100, 100, 0)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(100, 0, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
                 self.fade_to(0, 50, 100)
+                if not self.music_playing: break
                 time.sleep(0.3)
 
-        self.music_thread = threading.Thread(target=music_loop)
+        # FIX: Set daemon=True so thread doesn't block process exit
+        self.music_thread = threading.Thread(target=music_loop, daemon=True)
         self.music_thread.start()
 
     def stop_music(self):
         self.music_playing = False
         if self.music_thread:
-            self.music_thread.join()
+            # fade_to now checks music_playing, so join won't hang long
+            self.music_thread.join(timeout=2.0)
             self.music_thread = None
         self.turn_off()
 
