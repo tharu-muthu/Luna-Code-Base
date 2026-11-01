@@ -3,8 +3,8 @@ from flask import Flask, Response, request, send_from_directory
 from pathlib import Path
 import subprocess, threading, re
 
-# Where your site files live
-SITE_DIR = Path("/home/tharu/luna/robot-site-2")
+# Keep the UI portable when the project is cloned to a different directory.
+SITE_DIR = Path(__file__).resolve().parent / "luna" / "robot-site-2"
 
 def create_app(handler, audio, eyes, leds, servos, motors):
     app = Flask(__name__)
